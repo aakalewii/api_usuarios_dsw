@@ -7,10 +7,64 @@ use Illuminate\Validation\ValidationException;
 use App\Enums\Rol;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use OpenApi\Attributes as OA;
 
-
+#[OA\Info(
+    title: 'API Usuarios',
+    version: '1.0.0',
+    description: 'API de autenticación y gestión de usuarios'
+)]
+#[OA\Server(
+    url: 'http://localhost:5501/api/v1',
+    description: 'Servidor local'
+)]
+#[OA\SecurityScheme(
+    securityScheme: 'sanctum',
+    type: 'http',
+    scheme: 'bearer',
+    bearerFormat: 'JWT',
+    description: 'Introduce el token Bearer obtenido al hacer login'
+)]
 class AuthController extends Controller
 {
+    #[OA\Post(
+        path: '/registrar',
+        summary: 'Registrar un nuevo usuario',
+        tags: ['Autenticación'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['name', 'email', 'password'],
+                properties: [
+                    new OA\Property(property: 'name', type: 'string', example: 'Juan García'),
+                    new OA\Property(property: 'email', type: 'string', example: 'juan@email.com'),
+                    new OA\Property(property: 'password', type: 'string', example: 'MiPassword123'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: 'Usuario registrado con éxito',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string', example: 'Usuario registrado con éxito'),
+                        new OA\Property(
+                            property: 'user',
+                            type: 'object',
+                            properties: [
+                                new OA\Property(property: 'id', type: 'integer', example: 1),
+                                new OA\Property(property: 'name', type: 'string', example: 'Juan García'),
+                                new OA\Property(property: 'email', type: 'string', example: 'juan@email.com'),
+                                new OA\Property(property: 'rol', type: 'string', example: 'Cliente'),
+                            ]
+                        ),
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: 'Datos inválidos o email ya en uso'),
+        ]
+    )]
     public function registrar(Request $request)
     {
        $request->validate([
@@ -26,9 +80,39 @@ class AuthController extends Controller
             'rol' => Rol::CLIENTE,
         ]);
 
-        return response()->json(['message' => 'Usuario registrado con éxito', 'user' => $user], 201); 
+        return response()->json(['message' => 'Usuario registrado con éxito', 'user' => $user], 201);
     }
 
+    #[OA\Post(
+        path: '/login',
+        summary: 'Iniciar sesión',
+        tags: ['Autenticación'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['email', 'password'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', example: 'admin@habita.com'),
+                    new OA\Property(property: 'password', type: 'string', example: 'Admin1234'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Login exitoso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'access_token', type: 'string', example: '1|abc123...'),
+                        new OA\Property(property: 'token_type', type: 'string', example: 'Bearer'),
+                        new OA\Property(property: 'rol', type: 'string', example: 'Administrador'),
+                        new OA\Property(property: 'abilities', type: 'array', items: new OA\Items(type: 'string', example: 'muebles.crear')),
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: 'Credenciales incorrectas'),
+        ]
+    )]
     public function login(Request $request)
     {
         $request->validate([
@@ -61,9 +145,29 @@ class AuthController extends Controller
         ]);
     }
 
+    #[OA\Get(
+        path: '/perfil',
+        summary: 'Ver perfil del usuario autenticado',
+        tags: ['Autenticación'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Datos del usuario',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'id', type: 'integer', example: 1),
+                        new OA\Property(property: 'name', type: 'string', example: 'Juan García'),
+                        new OA\Property(property: 'email', type: 'string', example: 'juan@email.com'),
+                        new OA\Property(property: 'rol', type: 'string', example: 'Cliente'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'No autenticado'),
+        ]
+    )]
     public function perfil(Request $request)
     {
-        // Comprobación manual de ability
         if (!$request->user()->tokenCan('perfil.ver')) {
             return response()->json(['message' => 'No tienes permisos para ver el perfil'], 403);
         }
@@ -71,9 +175,18 @@ class AuthController extends Controller
         return response()->json($request->user());
     }
 
+    #[OA\Post(
+        path: '/logout',
+        summary: 'Cerrar sesión',
+        tags: ['Autenticación'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Sesión cerrada correctamente'),
+            new OA\Response(response: 401, description: 'No autenticado'),
+        ]
+    )]
     public function logout(Request $request)
     {
-        // Comprobación manual de ability
         if (!$request->user()->tokenCan('perfil.ver')) {
             return response()->json(['message' => 'Acceso denegado'], 403);
         }
@@ -81,5 +194,4 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Sesión cerrada correctamente y token eliminado']);
     }
-
 }
